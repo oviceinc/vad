@@ -68,11 +68,14 @@ async function main() {
         const indicatorColor = interpolateInferno(probs.isSpeech / 2)
         document.body.style.setProperty("--indicator-color", indicatorColor)
         
-        // When speech is detected, extend the skip period
-        // This ensures that after 100ms, if still speaking, we skip for another 100ms
+        // When speech is detected AND we're not in a skip period, extend the skip period
+        // Only update skipUntil when the model actually ran (not for skipped frames)
+        // This prevents infinite skip loops where skipped frames (assumed isSpeech: 1) keep extending skipUntil
+        const now = Date.now()
         const skipDurationMs = getSkipDurationMs()
-        if (skipDurationMs > 0 && probs.isSpeech >= 0.5) {
-          skipUntil = Date.now() + skipDurationMs
+        const isInSkipPeriod = now < skipUntil
+        if (skipDurationMs > 0 && probs.isSpeech >= 0.5 && !isInSkipPeriod) {
+          skipUntil = now + skipDurationMs
           console.log(`onFrameProcessed: speech detected (${probs.isSpeech.toFixed(2)}), set skipUntil=${skipUntil}`)
         }
       },
