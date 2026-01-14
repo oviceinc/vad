@@ -18,8 +18,13 @@ function addAudio(audioUrl) {
 }
 
 // State for skip frame debounce feature
+// States: 'normal' -> 'skipping' -> 'verifying' -> 'skipping' (if speech continues) or 'normal' (if speech ends)
+let skipState = 'normal'
 let skipUntil = 0
+let verifyUntil = 0
 let skippedFrameCount = 0
+let consecutiveSpeechFrames = 0
+const VERIFICATION_FRAMES_NEEDED = 3  // Number of consecutive speech frames needed to confirm speech continues
 
 function getSkipDurationMs() {
   const input = document.getElementById("skip_duration_input")
@@ -29,7 +34,7 @@ function getSkipDurationMs() {
 function updateSkipStats() {
   const statsEl = document.getElementById("skip_stats")
   if (statsEl) {
-    statsEl.textContent = `Skipped frames: ${skippedFrameCount}`
+    statsEl.textContent = `Skipped frames: ${skippedFrameCount} | State: ${skipState}`
   }
 }
 
@@ -55,31 +60,75 @@ async function main() {
       shouldSkipFrame: () => {
         const skipDurationMs = getSkipDurationMs()
         if (skipDurationMs <= 0) return false
+        
         const now = Date.now()
-        const shouldSkip = now < skipUntil
-        console.log(`shouldSkipFrame: now=${now}, skipUntil=${skipUntil}, shouldSkip=${shouldSkip}`)
-        if (shouldSkip) {
-          skippedFrameCount++
-          updateSkipStats()
+        
+        // State machine for skip/verify cycle
+        if (skipState === 'skipping') {
+          if (now < skipUntil) {
+            // Still in skip period
+            skippedFrameCount++
+            updateSkipStats()
+            console.log(`shouldSkipFrame: SKIPPING (${skipUntil - now}ms remaining)`)
+            return true
+          } else {
+            // Skip period ended, enter verification state
+            skipState = 'verifying'
+            consecutiveSpeechFrames = 0
+            console.log(`shouldSkipFrame: Skip period ended, entering VERIFYING state`)
+            updateSkipStats()
+            return false
+          }
         }
-        return shouldSkip
+        
+        // In 'normal' or 'verifying' state, don't skip - run the model
+        return false
       },
       onFrameProcessed: (probs, frame) => {
         const indicatorColor = interpolateInferno(probs.isSpeech / 2)
         document.body.style.setProperty("--indicator-color", indicatorColor)
         
-        // When speech is detected AND we're not in a skip period, extend the skip period
-        // Only update skipUntil when the model actually ran (not for skipped frames)
-        // This prevents infinite skip loops where skipped frames (assumed isSpeech: 1) keep extending skipUntil
-        const now = Date.now()
         const skipDurationMs = getSkipDurationMs()
-        const isInSkipPeriod = now < skipUntil
-        if (skipDurationMs > 0 && probs.isSpeech >= 0.5 && !isInSkipPeriod) {
-          skipUntil = now + skipDurationMs
-          console.log(`onFrameProcessed: speech detected (${probs.isSpeech.toFixed(2)}), set skipUntil=${skipUntil}`)
+        if (skipDurationMs <= 0) return
+        
+        const now = Date.now()
+        const isSpeech = probs.isSpeech >= 0.5
+        
+        if (skipState === 'verifying') {
+          // In verification state, check if speech continues
+          if (isSpeech) {
+            consecutiveSpeechFrames++
+            console.log(`onFrameProcessed: VERIFYING - speech frame ${consecutiveSpeechFrames}/${VERIFICATION_FRAMES_NEEDED}`)
+            if (consecutiveSpeechFrames >= VERIFICATION_FRAMES_NEEDED) {
+              // Speech confirmed, start new skip period
+              skipState = 'skipping'
+              skipUntil = now + skipDurationMs
+              consecutiveSpeechFrames = 0
+              console.log(`onFrameProcessed: Speech confirmed, entering SKIPPING state until ${skipUntil}`)
+              updateSkipStats()
+            }
+          } else {
+            // Non-speech frame during verification, reset counter
+            // Let VAD handle speech end detection naturally
+            consecutiveSpeechFrames = 0
+            console.log(`onFrameProcessed: VERIFYING - non-speech frame, reset counter`)
+          }
+        } else if (skipState === 'normal') {
+          // In normal state, start skip period when speech is detected
+          if (isSpeech) {
+            skipState = 'skipping'
+            skipUntil = now + skipDurationMs
+            console.log(`onFrameProcessed: Speech detected in NORMAL state, entering SKIPPING state until ${skipUntil}`)
+            updateSkipStats()
+          }
         }
       },
       onSpeechEnd: (arr) => {
+        // Reset state when speech ends
+        skipState = 'normal'
+        consecutiveSpeechFrames = 0
+        console.log(`onSpeechEnd: Resetting to NORMAL state`)
+        
         const wavBuffer = utils.encodeWAV(arr)
         const base64 = utils.arrayBufferToBase64(wavBuffer)
         const url = `data:audio/wav;base64,${base64}`
