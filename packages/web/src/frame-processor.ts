@@ -208,9 +208,26 @@ export class FrameProcessor implements FrameProcessorInterface {
 
     // Check if we should skip model inference for this frame
     if (this.options.shouldSkipFrame?.(frame)) {
-      // Emit frame with assumed speech probability and skip expensive model inference
+      // Skip expensive model inference but still update internal state
+      // Use assumed speech probability for UI updates only
       const assumedProbs = { isSpeech: 1, notSpeech: 0 }
       handleEvent({ probs: assumedProbs, msg: Message.FrameProcessed, frame })
+      
+      // Add frame to audio buffer (assume it's speech since we're in skip period after speech detection)
+      this.audioBuffer.push({
+        frame,
+        isSpeech: true,
+      })
+      
+      // Keep speechFrameCount and redemptionCounter as-is during skip
+      // This allows the state machine to continue normally after skip period ends
+      
+      // Trim audio buffer if not speaking (same as normal processing)
+      if (!this.speaking) {
+        while (this.audioBuffer.length > this.preSpeechPadFrames) {
+          this.audioBuffer.shift()
+        }
+      }
       return
     }
 
