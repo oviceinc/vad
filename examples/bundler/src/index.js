@@ -55,7 +55,9 @@ async function main() {
       shouldSkipFrame: () => {
         const skipDurationMs = getSkipDurationMs()
         if (skipDurationMs <= 0) return false
-        const shouldSkip = Date.now() < skipUntil
+        const now = Date.now()
+        const shouldSkip = now < skipUntil
+        console.log(`shouldSkipFrame: now=${now}, skipUntil=${skipUntil}, shouldSkip=${shouldSkip}`)
         if (shouldSkip) {
           skippedFrameCount++
           updateSkipStats()
@@ -69,8 +71,10 @@ async function main() {
       onSpeechStart: () => {
         // When speech is detected, start the skip period
         const skipDurationMs = getSkipDurationMs()
+        console.log(`onSpeechStart: skipDurationMs=${skipDurationMs}`)
         if (skipDurationMs > 0) {
           skipUntil = Date.now() + skipDurationMs
+          console.log(`onSpeechStart: set skipUntil=${skipUntil}`)
         }
       },
       onSpeechEnd: (arr) => {
