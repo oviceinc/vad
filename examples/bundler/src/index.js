@@ -17,6 +17,22 @@ function addAudio(audioUrl) {
   return entry
 }
 
+// State for skip frame debounce feature
+let skipUntil = 0
+let skippedFrameCount = 0
+
+function getSkipDurationMs() {
+  const input = document.getElementById("skip_duration_input")
+  return input ? parseInt(input.value, 10) || 0 : 0
+}
+
+function updateSkipStats() {
+  const statsEl = document.getElementById("skip_stats")
+  if (statsEl) {
+    statsEl.textContent = `Skipped frames: ${skippedFrameCount}`
+  }
+}
+
 async function main() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
@@ -36,9 +52,26 @@ async function main() {
       negativeSpeechThreshold: 0.4,
       minSpeechFrames: 15,
       preSpeechPadFrames: 30,
+      shouldSkipFrame: () => {
+        const skipDurationMs = getSkipDurationMs()
+        if (skipDurationMs <= 0) return false
+        const shouldSkip = Date.now() < skipUntil
+        if (shouldSkip) {
+          skippedFrameCount++
+          updateSkipStats()
+        }
+        return shouldSkip
+      },
       onFrameProcessed: (probs, frame) => {
         const indicatorColor = interpolateInferno(probs.isSpeech / 2)
         document.body.style.setProperty("--indicator-color", indicatorColor)
+      },
+      onSpeechStart: () => {
+        // When speech is detected, start the skip period
+        const skipDurationMs = getSkipDurationMs()
+        if (skipDurationMs > 0) {
+          skipUntil = Date.now() + skipDurationMs
+        }
       },
       onSpeechEnd: (arr) => {
         const wavBuffer = utils.encodeWAV(arr)

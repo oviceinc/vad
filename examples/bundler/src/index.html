@@ -116,6 +116,11 @@
             START VAD
           </button>
         </div>
+        <div class="skip-frame-controls" style="margin-top: 10px;">
+          <label for="skip_duration_input">Skip duration after speech detection (ms): </label>
+          <input type="number" id="skip_duration_input" value="100" min="0" max="1000" style="width: 80px; background: black; color: white; border: 1px solid white;">
+          <span id="skip_stats" style="margin-left: 15px; color: #888;">Skipped frames: 0</span>
+        </div>
         <ol id="playlist" reversed></ol>
       </div>
     </div>
