@@ -36,6 +36,14 @@ export interface FrameProcessorOptions {
    * If true, when the user pauses the VAD, it may trigger `onSpeechEnd`.
    */
   submitUserSpeechOnPause: boolean
+
+  /**
+   * Optional callback to determine whether to skip model inference for a frame.
+   * If this returns true, the frame will be emitted with assumed speech probability (isSpeech: 1)
+   * and the expensive ONNX model inference will be skipped.
+   * This is useful for implementing debounce after speech detection to reduce CPU load.
+   */
+  shouldSkipFrame?: (frame: Float32Array) => boolean
 }
 
 export const defaultFrameProcessorOptions: FrameProcessorOptions = {
@@ -195,6 +203,14 @@ export class FrameProcessor implements FrameProcessorInterface {
     handleEvent: (event: FrameProcessorEvent) => void
   ) => {
     if (!this.active) {
+      return
+    }
+
+    // Check if we should skip model inference for this frame
+    if (this.options.shouldSkipFrame?.(frame)) {
+      // Emit frame with assumed speech probability and skip expensive model inference
+      const assumedProbs = { isSpeech: 1, notSpeech: 0 }
+      handleEvent({ probs: assumedProbs, msg: Message.FrameProcessed, frame })
       return
     }
 
